@@ -1,26 +1,18 @@
 require 'set'
 require 'awesome_print'
+require 'byebug'
 
 class Tile
-  attr_accessor :status
+  attr_accessor :revealed, :flagged, :bomb
 
   def initialize(game_board, position)
-    @game_board= game_board
+    @game_board = game_board
     @position = position
     @bomb = false
     @flagged = false
     @revealed = false
+    @old_neighbors = []
   end
-
-  # def update_status
-  #   @game_board.each do |y_coord|
-  #     y_coord.each_with_index do |tile, x_coord|
-  #       if @game_board[y_coord][x_coord].is_bomb?
-  #         @game_board[new_y][new_x].status += 1
-  #       end
-  #     end
-  #   end
-  # end
 
   def status
     #get the neighbor bomb count
@@ -30,15 +22,25 @@ class Tile
     neighbors = []
     [-1, 0, 1].each do |mod1|
       [-1, 0, 1].each do |mod2|
-        x_coor = @position[0] + mod1
-        y_coor = @position[1] + mod2
-        unless mod1 == 0 && mod2 == 0 && on_board?(x_coor,y_coor)
-          neighbors << [x_coor , y_coor]
+        y_coor = @position[0] + mod1
+        x_coor = @position[1] + mod2
+        unless mod1 == 0 && mod2 == 0
+          unless on_board?(y_coor,x_coor) == false || old_neighbors.include?(y_coor, x_coor)
+            neighbors << [y_coor , x_coor]
+          end
         end
       end
     end
 
-    neighbors
+    neighbors.each do |neighbor|
+      unless @old_neighbors.include?(neighbor)
+        @old_neighbors << neighbor
+      end
+    end
+
+    @old_neighbors << @position unless @old_neighbors.include?(@position)
+
+    neighbor
   end
 
   def on_board?(x,y) #make 8 dynamic in future?
@@ -46,8 +48,28 @@ class Tile
   end
 
   def neighbor_bomb_count
+    count = 0
+    neighbors.each do |neighbor|
+      # byebug
+      count += 1 if @game_board[neighbor[0]][neighbor[1]].is_bomb?
+    end
+    # count == 0 ? " " : count
+    return " "
   end
-  
+
+  def expand_reveal
+    if neighbor_bomb_count == " "
+      reveal_tile
+      neighbors.each do |neighbor|
+        byebug
+        p neighbor
+        @game_board[neighbor[0]][neighbor[1]].expand_reveal
+      end
+    elsif neighbor_bomb_count.is_a?(Integer)
+      reveal_tile
+    end
+  end
+
 
   def is_bomb?
     @bomb
@@ -63,6 +85,18 @@ class Tile
 
   def reveal_tile
     @revealed = true
+
+  end
+
+  def inspect
+    res = {
+      position: @position,
+      bomb: @bomb,
+      flagged: @flagged,
+      revealed: @revealed
+    }
+
+    res.inspect
   end
 end
 
@@ -70,22 +104,50 @@ class Board
   attr_accessor :game_board
 
   def initialize
-    @game_board = generate_board
-    # seed bombs
+    @game_board = Array.new(9) {Array.new(9)}
+    generate_board
+  end
+
+  def display_board
+    display = Array.new(9) {Array.new(9)}
+    @game_board.each_with_index do |row, y_coor|
+      row.each_with_index do |dummy, x_coor|
+        current_tile = @game_board[y_coor][x_coor]
+        if current_tile.revealed
+          return false if current_tile.is_bomb?
+          display[y_coor][x_coor] = current_tile.neighbor_bomb_count
+          current_tile.expand_reveal
+        else
+          display[y_coor][x_coor] = "*"
+        end
+      end
+    end
+
+    display
   end
 
   def generate_board
-    Array.new(9) {Array.new(9) {Tile.new(@game_board)}}
+    @game_board.each_with_index do |row, y_coor|
+      row.each_with_index do |dummy, x_coor|
+        @game_board[y_coor][x_coor] = Tile.new(@game_board, [y_coor, x_coor])
+      end
+    end
+
+    seed_bombs
   end
 
   def seed_bombs
-    10.times do |bomb|
+    count = 0
+    until count == 10
       x, y = (0..8).to_a.sample, (0..8).to_a.sample
-      if !@game_board[y][x].is_bomb?
-        @game_board[y][x] = Tile.new(@game_board, 'bomb') # TA: just update
+      unless @game_board[y][x].is_bomb?
+        @game_board[y][x].bomb_tile
+        count += 1
       end
     end
-    @game_board
+
+    p @game_board
+
   end
 end
 
@@ -95,11 +157,20 @@ class Minesweeper
   end
 
   def play
-    puts "Please choose coordinates (r, f + [x,y])"
-    user_input = gets.chomp
+    puts "Would you like to reveal or flag? (r/f)"
+    user_action = gets.chomp
+    puts "Where would you like to do this? x, y"
+    user_position = gets.chomp.split(', ')
+    if user_action == r
+      @board.game_board[user_position[1]][user_position[0]].reveal_tile
+    elsif user_action == f
+      @board.game_board[user_position[1]][user_position[0]].flag_tile
+    else
+      puts 'Not a valid move.'
+    end
     # ...
   end
 
 end
 
-# p game = Board.new.seed_bombs
+game = Board.new
